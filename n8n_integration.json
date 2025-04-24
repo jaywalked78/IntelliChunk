@@ -1,0 +1,263 @@
+{
+  "name": "Frame Processor with Image Integration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook-test/a8ca3927-504b-4038-baff-c6e0796ff7e1",
+        "options": {
+          "rawBody": true,
+          "responseMode": "lastNode",
+          "responseData": "allEntries"
+        },
+        "authentication": "basicAuth"
+      },
+      "name": "Text Chunks Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "a8ca3927-504b-4038-baff-c6e0796ff7e1"
+    },
+    {
+      "parameters": {
+        "filePath": "={{ $json.imageUrlsPath }}"
+      },
+      "name": "Read Image URLs",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the image URLs JSON data\nconst imageUrlsJson = JSON.parse(Buffer.from($input.item(0).binary.data, 'base64').toString());\n\n// Get the text chunks data \nconst textChunksData = $input.item(0).json.body;\n\n// Extract folder name from both datasets to validate we're processing the same data\nconst chunksFolder = textChunksData.folder_name;\nconst imagesFolder = imageUrlsJson.directory.split('/').pop();\n\nconsole.log(`Processing chunks for folder: ${chunksFolder}`);\nconsole.log(`Images are from folder: ${imagesFolder}`);\n\n// Create a map of image URLs by filename\nconst imageUrlMap = {};\nif (imageUrlsJson && imageUrlsJson.image_urls) {\n  imageUrlsJson.image_urls.forEach(url => {\n    // Extract the filename from the URL\n    const fileName = url.split('/').pop();\n    imageUrlMap[fileName] = url;\n  });\n}\n\n// Now enhance each frame with its corresponding image URL\nif (textChunksData && textChunksData.frames) {\n  textChunksData.frames.forEach(frame => {\n    // Get the base filename (might need adjustment based on your naming pattern)\n    const baseFileName = frame.file_name;\n    \n    // If we have a matching URL, add it to the frame data\n    if (imageUrlMap[baseFileName]) {\n      frame.image_url = imageUrlMap[baseFileName];\n    } else {\n      // If exact match not found, try a fuzzy match\n      const possibleMatch = Object.keys(imageUrlMap).find(key => \n        key.includes(baseFileName) || baseFileName.includes(key));\n      \n      if (possibleMatch) {\n        frame.image_url = imageUrlMap[possibleMatch];\n        console.log(`Fuzzy matched ${baseFileName} to ${possibleMatch}`);\n      } else {\n        console.log(`No image URL found for ${baseFileName}`);\n        frame.image_url = null;\n      }\n    }\n  });\n}\n\n// Add a summary of enhancement\ntextChunksData.image_server_info = {\n  image_count: imageUrlsJson.count || 0,\n  images_timestamp: imageUrlsJson.timestamp,\n  images_directory: imageUrlsJson.directory,\n  enhanced_frames: textChunksData.frames.filter(f => f.image_url).length,\n  total_frames: textChunksData.frames.length\n};\n\n// Return the enhanced data\nreturn { json: textChunksData };"
+      },
+      "name": "Combine Data Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Frame Processing Complete\n\nProcessing for folder **{{$json.folder_name}}** has completed successfully.\n\n### Summary\n- Total frames: {{$json.frames.length}}\n- Frames with images: {{$json.image_server_info.enhanced_frames}}\n- Processed at: {{$json.processed_at}}\n\n### Next Steps\n- The enhanced data is now ready for embedding generation\n- Use the Pinecone node to store the chunks with their embeddings\n- The image URLs are included with each frame for multimodal models",
+        "height": 460,
+        "width": 780
+      },
+      "name": "Success Message",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.body.frames.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Valid Frames?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        460,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5
+            }
+          ]
+        }
+      },
+      "name": "Image Path Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Set the path to the JSON file with image URLs\n// This would typically come from your integration script\nconst baseDir = '/home/jason/Documents/DatabaseAdvancedTokenizer/LightweightImageServer/output/json';\nconst folderName = 'screen_recording_2025_02_25_at_8_05_47_pm';\nconst fileName = `${folderName}.json`;\nconst fullPath = `${baseDir}/${fileName}`;\n\nreturn { json: { imageUrlsPath: fullPath } };"
+      },
+      "name": "Set Image Path",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        460,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        680,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.folder_name }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "screen_recording_2025_02_25_at_8_05_47_pm"
+            }
+          ]
+        }
+      },
+      "name": "Process Completed?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        680,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Generate Embeddings",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [
+        900,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Text Chunks Webhook": {
+      "main": [
+        [
+          {
+            "node": "Valid Frames?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Image URLs": {
+      "main": [
+        [
+          {
+            "node": "Combine Data Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Data Sources": {
+      "main": [
+        [
+          {
+            "node": "Success Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Frames?": {
+      "main": [
+        [
+          {
+            "node": "Read Image URLs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Path Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Image Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Image Path": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Completed?": {
+      "main": [
+        [
+          {
+            "node": "Generate Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "createdAt": "2025-04-10T08:20:00.000Z",
+  "updatedAt": "2025-04-10T08:20:00.000Z",
+  "settings": {},
+  "staticData": null,
+  "tags": [
+    {
+      "name": "RAG",
+      "createdAt": "2025-04-10T00:00:00.000Z",
+      "updatedAt": "2025-04-10T00:00:00.000Z"
+    },
+    {
+      "name": "Image Processing",
+      "createdAt": "2025-04-10T00:00:00.000Z",
+      "updatedAt": "2025-04-10T00:00:00.000Z"
+    }
+  ]
+} 
