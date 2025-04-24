@@ -11,7 +11,7 @@ IntelliChunk is a key component in a larger content ingestion pipeline designed 
 ```mermaid
 flowchart TD
     A[Video Input] --> B(n8n: Trigger Frame Processor);
-    B --> C{[Frame Processor Extractor]};
+    B --> C[Frame Processor Extractor];
     C --> D(n8n: AI Enrichment + OCR Refinement + Airtable Upsert);
     D --> E(n8n: Trigger IntelliChunk);
     E --> F{INTELLICHUNK + Image Server};
